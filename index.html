@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Casa AD — Tour 360</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+:root{
+  --bg:#0d0f10; --glass:rgba(16,19,21,.6); --glass-strong:rgba(16,19,21,.86);
+  --line:rgba(236,232,224,.18); --fg:#ece8e0; --muted:#a7a299; --accent:#d9b97a;
+  --font-ui:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-data:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  --sb:env(safe-area-inset-bottom,0px);
+  color-scheme:dark;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-ui);overflow:hidden;-webkit-user-select:none;user-select:none;overscroll-behavior:none;}
+#app{position:fixed;inset:0;background:var(--bg);}
+#stage{position:absolute;inset:0;touch-action:none;cursor:grab;}
+#stage.dragging{cursor:grabbing;}
+#stage canvas{display:block;width:100%;height:100%;}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.glass{background:var(--glass);border:1px solid var(--line);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);}
+.top{position:absolute;z-index:5;top:calc(env(safe-area-inset-top,0px) + 12px);left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));display:flex;align-items:center;gap:8px;pointer-events:none;}
+.top > *{pointer-events:auto;}
+.title{display:flex;align-items:center;gap:10px;min-width:0;padding:8px 12px;border-radius:999px;margin-right:auto;cursor:pointer;}
+.title .count{font-family:var(--font-data);font-size:11px;color:var(--accent);letter-spacing:.04em;font-variant-numeric:tabular-nums;flex:none;}
+.title .name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.tool{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;flex:none;transition:background .2s,color .2s;}
+.tool:hover{background:var(--glass-strong);}
+.tool:active{transform:scale(.88);}
+.tool.on{color:var(--bg);background:var(--accent);border-color:var(--accent);}
+.tool.checking{animation:pulse .7s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+.tool svg{width:18px;height:18px;}
+.nav{position:absolute;z-index:4;top:50%;width:44px;height:44px;margin-top:-22px;border-radius:50%;display:grid;place-items:center;transition:transform .15s,background .2s;}
+.nav:hover{background:var(--glass-strong);}
+.nav:active{transform:scale(.9);}
+.nav svg{width:18px;height:18px;}
+.nav.next{right:max(10px,env(safe-area-inset-right,0px));}
+.nav.prev{left:max(10px,env(safe-area-inset-left,0px));width:36px;height:36px;margin-top:-18px;opacity:.75;}
+.dock{position:absolute;z-index:6;left:0;right:0;bottom:calc(var(--sb) + 14px);display:flex;flex-direction:column-reverse;align-items:center;gap:10px;pointer-events:none;}
+.dock > *{pointer-events:auto;}
+.handle{height:34px;padding:0 14px;border-radius:999px;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500;}
+.handle svg{width:14px;height:14px;transition:transform .3s;}
+.dock.open .handle svg{transform:rotate(180deg);}
+.panel{width:calc(100% - 24px);max-width:1100px;border-radius:14px;padding:10px;}
+.strip{display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;scrollbar-width:thin;padding-bottom:2px;}
+.thumb{position:relative;flex:none;width:140px;scroll-snap-align:center;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:#000;}
+.thumb button{display:block;width:100%;}
+.thumb img{display:block;width:100%;aspect-ratio:2/1;object-fit:cover;opacity:.75;}
+.thumb.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
+.thumb.active img{opacity:1;}
+.thumb .idx{position:absolute;left:6px;bottom:4px;font-family:var(--font-data);font-size:10px;color:var(--fg);text-shadow:0 1px 3px #000;pointer-events:none;}
+.toast{position:absolute;z-index:7;left:50%;top:calc(env(safe-area-inset-top,0px) + 64px);transform:translateX(-50%);padding:8px 14px;border-radius:999px;font-size:12px;max-width:calc(100% - 32px);text-align:center;opacity:0;transition:opacity .25s;pointer-events:none;}
+.toast.show{opacity:1;}
+.loading{position:absolute;z-index:3;inset:0;display:grid;place-items:center;pointer-events:none;opacity:0;transition:opacity .2s;}
+.loading.show{opacity:1;}
+.loading span{padding:8px 14px;border-radius:999px;font-size:12px;font-family:var(--font-data);}
+#app.immersive .top > :not(#btnFull),#app.immersive .dock,#app.immersive .prev{opacity:0;pointer-events:none;}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}}
+@media (max-width:520px){.thumb{width:120px;}.title .name{max-width:30vw;}.top{gap:6px;}.tool{width:38px;height:38px;}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage" aria-label="Imagem panorâmica. Arraste para olhar em volta."></div>
+
+  <div class="top">
+    <div class="title glass" id="titleBtn"><span class="count" id="count">1 / 1</span><span class="name" id="name">—</span></div>
+    <button class="tool glass" id="btnGyro" title="Giroscópio" aria-label="Ativar giroscópio" aria-pressed="false" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M3 9a10 10 0 0 0 0 6M21 9a10 10 0 0 1 0 6" stroke-linecap="round"/></svg>
+    </button>
+    <button class="tool glass" id="btnFull" title="Tela cheia" aria-label="Tela cheia" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path id="fsIcon" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    </button>
+  </div>
+
+  <button class="nav prev glass" id="btnPrev" aria-label="Imagem anterior">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+  </button>
+  <button class="nav next glass" id="btnNext" aria-label="Próxima imagem">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+  </button>
+
+  <div class="dock" id="dock">
+    <button class="handle glass" id="btnDrawer" aria-expanded="false" aria-controls="panel">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>
+      <span id="drawerLabel">Ambientes</span>
+    </button>
+    <div class="panel glass" id="panel" hidden><div class="strip" id="strip"></div></div>
+  </div>
+
+  <div class="toast glass" id="toast"></div>
+  <div class="loading" id="loading"><span class="glass" id="loadingText">carregando…</span></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="manifest.js"></script>
+<script>
+(function(){
+const $ = id => document.getElementById(id);
+const stage=$('stage'), strip=$('strip'), dock=$('dock'), panel=$('panel'), toastEl=$('toast');
+const isTouch = matchMedia('(hover:none)').matches || ('ontouchstart' in window);
+const SCENES = (window.TOUR && window.TOUR.scenes) || [];
+document.title = (window.TOUR && window.TOUR.title ? window.TOUR.title+' — Tour 360' : document.title);
+
+const renderer = new THREE.WebGLRenderer({antialias:false,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, isTouch?1.5:2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75,1,0.1,1100);
+camera.rotation.order='YXZ';
+const geo = new THREE.SphereGeometry(500,96,64); geo.scale(-1,1,1);
+const mat = new THREE.MeshBasicMaterial({color:0xffffff});
+scene.add(new THREE.Mesh(geo,mat));
+
+function resize(){
+  const w=stage.clientWidth||innerWidth, h=stage.clientHeight||innerHeight;
+  renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+addEventListener('resize',resize); resize();
+renderer.domElement.addEventListener('webglcontextlost',e=>{ e.preventDefault(); toast('Memória cheia, recarregando a imagem'); },false);
+renderer.domElement.addEventListener('webglcontextrestored',()=>{ curTex=null; show(current); },false);
+
+let lon=0, lat=0, vLon=0, vLat=0, fov=75;
+const DEG=Math.PI/180;
+let gyroOn=false, gyroData=null, screenOrient=0, yawOffset=0;
+const zee=new THREE.Vector3(0,0,1), euler=new THREE.Euler(), q0=new THREE.Quaternion(), q1=new THREE.Quaternion(-Math.sqrt(.5),0,0,Math.sqrt(.5)), qYaw=new THREE.Quaternion(), yAxis=new THREE.Vector3(0,1,0);
+
+const pointers=new Map(); let lastX=0,lastY=0,pinchDist=0;
+stage.addEventListener('pointerdown',e=>{
+  try{ stage.setPointerCapture(e.pointerId); }catch(_){}
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  lastX=e.clientX; lastY=e.clientY; vLon=vLat=0; stage.classList.add('dragging');
+  if(pointers.size===2) pinchDist=dist();
+});
+stage.addEventListener('pointermove',e=>{
+  if(!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pointers.size===2){ const d=dist(); if(pinchDist) setFov(fov*pinchDist/d); pinchDist=d; return; }
+  const k=fov/(stage.clientHeight||1);
+  const dx=(e.clientX-lastX)*k, dy=(e.clientY-lastY)*k;
+  lastX=e.clientX; lastY=e.clientY;
+  if(gyroOn){ yawOffset+=dx*DEG; } else { lon+=dx; lat+=dy; vLon=dx; vLat=dy; }
+});
+function endPtr(e){ pointers.delete(e.pointerId); if(pointers.size<2) pinchDist=0; if(pointers.size===1){const p=[...pointers.values()][0]; lastX=p.x; lastY=p.y;} if(!pointers.size) stage.classList.remove('dragging'); }
+['pointerup','pointercancel','lostpointercapture'].forEach(t=>stage.addEventListener(t,endPtr));
+function dist(){ const [a,b]=[...pointers.values()]; return Math.hypot(a.x-b.x,a.y-b.y)||1; }
+stage.addEventListener('wheel',e=>{ e.preventDefault(); setFov(fov*Math.exp(e.deltaY*0.001)); },{passive:false});
+function setFov(f){ fov=Math.max(30,Math.min(100,f)); camera.fov=fov; camera.updateProjectionMatrix(); }
+
+function onOrient(e){ if(e.alpha==null) return; gyroData=e; }
+function updOrient(){ screenOrient=(screen.orientation&&screen.orientation.angle)||window.orientation||0; }
+addEventListener('orientationchange',()=>{ updOrient(); setTimeout(resize,200); }); updOrient();
+if('DeviceOrientationEvent' in window && isTouch) $('btnGyro').hidden=false;
+
+async function toggleGyro(){
+  if(gyroOn){ stopGyro(); return; }
+  const btn=$('btnGyro'); btn.classList.add('checking'); toast('Verificando sensor de movimento…');
+  try{
+    if(typeof DeviceOrientationEvent.requestPermission==='function'){
+      const r=await DeviceOrientationEvent.requestPermission();
+      if(r!=='granted'){ btn.classList.remove('checking'); toast('Permissão de movimento negada'); return; }
+    }
+  }catch(err){ btn.classList.remove('checking'); toast('Giroscópio bloqueado nesta janela. Use arrastar.'); return; }
+  try{
+    if(navigator.permissions && navigator.permissions.query){
+      const st = await navigator.permissions.query({name:'gyroscope'});
+      if(st.state==='denied'){ btn.classList.remove('checking'); toast('Sem permissão de movimento aqui. Use arrastar.'); return; }
+    }
+  }catch(e){}
+  gyroData=null; addEventListener('deviceorientation',onOrient);
+  const started=Date.now();
+  const wait=setInterval(()=>{
+    if(gyroData){ clearInterval(wait); btn.classList.remove('checking'); gyroOn=true; setGyroBtn(); alignYaw(); toast('Giroscópio ativado'); }
+    else if(Date.now()-started>1200){ clearInterval(wait); btn.classList.remove('checking'); removeEventListener('deviceorientation',onOrient); toast('Sem sinal do giroscópio aqui. Use arrastar.'); }
+  },60);
+}
+function alignYaw(){
+  const qg=gyroQuat(new THREE.Quaternion());
+  const dir=new THREE.Vector3(0,0,-1).applyQuaternion(qg);
+  yawOffset = lon*DEG - Math.atan2(-dir.x,-dir.z);
+}
+function stopGyro(){
+  removeEventListener('deviceorientation',onOrient);
+  if(gyroOn){
+    const dir=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+    lon=Math.atan2(-dir.x,-dir.z)/DEG; lat=Math.asin(Math.max(-1,Math.min(1,dir.y)))/DEG;
+  }
+  gyroOn=false; setGyroBtn();
+}
+function setGyroBtn(){ const b=$('btnGyro'); b.classList.toggle('on',gyroOn); b.setAttribute('aria-pressed',gyroOn); }
+function gyroQuat(q){
+  const a=(gyroData.alpha||0)*DEG, b=(gyroData.beta||0)*DEG, g=(gyroData.gamma||0)*DEG;
+  euler.set(b,a,-g,'YXZ'); q.setFromEuler(euler); q.multiply(q1); q.multiply(q0.setFromAxisAngle(zee,-screenOrient*DEG));
+  return q;
+}
+$('btnGyro').addEventListener('click',toggleGyro);
+
+function frame(){
+  requestAnimationFrame(frame);
+  if(gyroOn && gyroData){
+    qYaw.setFromAxisAngle(yAxis,yawOffset);
+    gyroQuat(camera.quaternion); camera.quaternion.premultiply(qYaw);
+  } else {
+    if(!pointers.size){ vLon*=0.92; vLat*=0.92; lon+=vLon; lat+=vLat; }
+    lat=Math.max(-89,Math.min(89,lat));
+    camera.rotation.set(lat*DEG, lon*DEG, 0, 'YXZ');
+  }
+  renderer.render(scene,camera);
+}
+frame();
+
+/* ---------- cenas ---------- */
+let current=0, loadToken=0, curTex=null;
+const texCache=new Map();
+
+function loadTextureImage(url){
+  return new Promise((res,rej)=>{
+    const img=new Image(); img.crossOrigin='anonymous'; img.decoding='async';
+    img.onload=()=>res(img); img.onerror=rej; img.src=url;
+  });
+}
+async function getTexture(i){
+  if(texCache.has(i)) return texCache.get(i);
+  const img = await loadTextureImage('img/'+SCENES[i].file);
+  const tex = new THREE.Texture(img);
+  tex.flipY=true; tex.encoding=THREE.sRGBEncoding;
+  tex.minFilter=THREE.LinearFilter; tex.magFilter=THREE.LinearFilter; tex.generateMipmaps=false;
+  tex.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());
+  tex.needsUpdate=true;
+  texCache.set(i,tex);
+  return tex;
+}
+function prefetch(i){ if(SCENES[i]&&!texCache.has(i)) getTexture(i).catch(()=>{}); }
+
+async function show(i){
+  if(!SCENES.length) return;
+  current=((i%SCENES.length)+SCENES.length)%SCENES.length;
+  const tok=++loadToken; const sc=SCENES[current];
+  $('count').textContent=(current+1)+' / '+SCENES.length; $('name').textContent=sc.name||('Cena '+(current+1));
+  markActive();
+  $('loadingText').textContent='carregando '+(current+1)+' de '+SCENES.length+'…';
+  $('loading').classList.add('show');
+  try{
+    const tex=await getTexture(current);
+    if(tok!==loadToken) return;
+    mat.map=tex; mat.needsUpdate=true; curTex=tex;
+    renderer.render(scene,camera);
+    if(!gyroOn){ lon=0; lat=0; vLon=vLat=0; }
+    prefetch(current+1); prefetch(current-1);
+  }catch(e){
+    if(tok===loadToken) toast('Não consegui abrir '+(sc.name||sc.file));
+  }
+  if(tok===loadToken) $('loading').classList.remove('show');
+}
+
+function markActive(){
+  const ts=strip.querySelectorAll('.thumb');
+  ts.forEach((t,i)=>{ const a=i===current; t.classList.toggle('active',a);
+    if(a && !panel.hidden){ const l=t.offsetLeft-(strip.clientWidth-t.offsetWidth)/2; strip.scrollTo({left:l,behavior:'smooth'}); } });
+}
+function renderStrip(){
+  strip.textContent='';
+  SCENES.forEach((sc,i)=>{
+    const d=document.createElement('div'); d.className='thumb';
+    const b=document.createElement('button'); b.type='button'; b.setAttribute('aria-label','Abrir '+(sc.name||sc.file));
+    const im=document.createElement('img'); im.loading='lazy'; im.src='thumb/'+sc.file; im.alt='';
+    b.appendChild(im); b.addEventListener('click',()=>show(i));
+    const n=document.createElement('span'); n.className='idx'; n.textContent=String(i+1).padStart(2,'0');
+    d.append(b,n); strip.appendChild(d);
+  });
+  $('drawerLabel').textContent='Ambientes · '+SCENES.length;
+  markActive();
+}
+
+$('btnNext').addEventListener('click',()=>show(current+1));
+$('btnPrev').addEventListener('click',()=>show(current-1));
+
+function setPanel(open){
+  panel.hidden=!open; dock.classList.toggle('open',open);
+  $('btnDrawer').setAttribute('aria-expanded',open);
+  if(open) requestAnimationFrame(markActive);
+}
+$('btnDrawer').addEventListener('click',()=>setPanel(panel.hidden));
+$('titleBtn').addEventListener('click',()=>setPanel(panel.hidden));
+
+let sy=null;
+dock.addEventListener('touchstart',e=>{ sy=e.touches[0].clientY; },{passive:true});
+dock.addEventListener('touchend',e=>{ if(sy==null) return; const dy=e.changedTouches[0].clientY-sy; if(dy<-30) setPanel(true); else if(dy>30) setPanel(false); sy=null; },{passive:true});
+
+const app=$('app');
+$('btnFull').addEventListener('click',async()=>{
+  const fsEl=document.fullscreenElement||document.webkitFullscreenElement;
+  if(fsEl){ (document.exitFullscreen||document.webkitExitFullscreen).call(document); return; }
+  if(app.classList.contains('immersive')){ setImmersive(false); return; }
+  const el=document.documentElement, req=el.requestFullscreen||el.webkitRequestFullscreen;
+  try{ if(!req) throw 0; const p=req.call(el); if(p&&p.then) await p; }
+  catch(e){ setImmersive(true); toast('Modo imersivo. Toque no botão de novo para sair.'); }
+});
+function setImmersive(on){ app.classList.toggle('immersive',on); fsState(on); if(on) setPanel(false); }
+function fsState(on){ $('btnFull').classList.toggle('on',on); $('btnFull').setAttribute('aria-pressed',on);
+  $('fsIcon').setAttribute('d', on?'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5':'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5'); }
+['fullscreenchange','webkitfullscreenchange'].forEach(ev=>document.addEventListener(ev,()=>{ fsState(!!(document.fullscreenElement||document.webkitFullscreenElement)); setTimeout(resize,150); }));
+
+addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'){ show(current+1); }
+  else if(e.key==='ArrowLeft') show(current-1);
+  else if(e.key==='g'||e.key==='G') setPanel(panel.hidden);
+  else if(e.key==='f'||e.key==='F') $('btnFull').click();
+  else if(e.key==='Escape'){ if(app.classList.contains('immersive')) setImmersive(false); else setPanel(false); }
+});
+
+let tt; function toast(m){ toastEl.textContent=m; toastEl.classList.add('show'); clearTimeout(tt); tt=setTimeout(()=>toastEl.classList.remove('show'),Math.max(2800,m.length*55)); }
+
+renderStrip(); show(0);
+})();
+</script>
+</body>
+</html>
